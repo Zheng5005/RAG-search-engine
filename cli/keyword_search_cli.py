@@ -5,7 +5,7 @@ from pathlib import Path
 
 from nltk.stem import PorterStemmer
 
-from inverted_index import InvertedIndex
+from inverted_index import InvertedIndex, tokenize_term
 
 _translate_table = str.maketrans("", "", string.punctuation)
 
@@ -34,11 +34,31 @@ def main() -> None:
 
     subparsers.add_parser("build", help="Build and save the inverted index")
 
+    tf_parser = subparsers.add_parser("tf", help="Get term frequency in a document")
+    tf_parser.add_argument("doc_id", type=int, help="Document ID")
+    tf_parser.add_argument("term", type=str, help="Term to look up")
+
     args = parser.parse_args()
 
     match args.command:
         case "build":
             build_command()
+        case "tf":
+            base = Path(__file__).resolve().parent.parent
+            stopwords = _load_stopwords(base / "data" / "stopwords.txt")
+            index = InvertedIndex()
+            try:
+                index.load()
+            except FileNotFoundError as e:
+                print(e)
+                return
+            try:
+                token = tokenize_term(args.term, stopwords)
+            except ValueError as e:
+                print(e)
+                return
+            freq = index.get_tf(args.doc_id, token)
+            print(freq)
         case "search":
             base = Path(__file__).resolve().parent.parent
             stopwords = _load_stopwords(base / "data" / "stopwords.txt")
