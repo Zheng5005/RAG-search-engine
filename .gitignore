@@ -12,5 +12,14 @@ wheels/
 # Data
 /data/
 
+# Generated index cache
+cache/
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store
+
 # atl
 .atl/
