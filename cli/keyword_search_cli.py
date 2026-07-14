@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import string
 from pathlib import Path
 
@@ -38,6 +39,13 @@ def main() -> None:
     tf_parser.add_argument("doc_id", type=int, help="Document ID")
     tf_parser.add_argument("term", type=str, help="Term to look up")
 
+    idf_parser = subparsers.add_parser("idf", help="Get inverse document frequency of a term")
+    idf_parser.add_argument("term", type=str, help="Term to look up")
+
+    tfidf_parser = subparsers.add_parser("tfidf", help="Get TF-IDF score for a term in a document")
+    tfidf_parser.add_argument("doc_id", type=int, help="Document ID")
+    tfidf_parser.add_argument("term", type=str, help="Term to look up")
+
     args = parser.parse_args()
 
     match args.command:
@@ -59,6 +67,44 @@ def main() -> None:
                 return
             freq = index.get_tf(args.doc_id, token)
             print(freq)
+        case "idf":
+            base = Path(__file__).resolve().parent.parent
+            stopwords = _load_stopwords(base / "data" / "stopwords.txt")
+            index = InvertedIndex()
+            try:
+                index.load()
+            except FileNotFoundError as e:
+                print(e)
+                return
+            try:
+                token = tokenize_term(args.term, stopwords)
+            except ValueError as e:
+                print(e)
+                return
+            total_docs = len(index.docmap)
+            term_docs = len(index.get_documents(token))
+            idf = math.log((total_docs + 1) / (term_docs + 1))
+            print(f"Inverse document frequency of '{args.term}': {idf:.2f}")
+        case "tfidf":
+            base = Path(__file__).resolve().parent.parent
+            stopwords = _load_stopwords(base / "data" / "stopwords.txt")
+            index = InvertedIndex()
+            try:
+                index.load()
+            except FileNotFoundError as e:
+                print(e)
+                return
+            try:
+                token = tokenize_term(args.term, stopwords)
+            except ValueError as e:
+                print(e)
+                return
+            tf = index.get_tf(args.doc_id, token)
+            total_docs = len(index.docmap)
+            term_docs = len(index.get_documents(token))
+            idf = math.log((total_docs + 1) / (term_docs + 1))
+            tf_idf = tf * idf
+            print(f"TF-IDF score of '{args.term}' in document '{args.doc_id}': {tf_idf:.2f}")
         case "search":
             base = Path(__file__).resolve().parent.parent
             stopwords = _load_stopwords(base / "data" / "stopwords.txt")
