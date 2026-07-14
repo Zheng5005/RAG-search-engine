@@ -6,7 +6,14 @@ from pathlib import Path
 
 from nltk.stem import PorterStemmer
 
-from inverted_index import InvertedIndex, tokenize_term
+from inverted_index import (
+    BM25_B,
+    BM25_K1,
+    InvertedIndex,
+    bm25_idf_command,
+    bm25_tf_command,
+    tokenize_term,
+)
 
 _translate_table = str.maketrans("", "", string.punctuation)
 
@@ -45,6 +52,21 @@ def main() -> None:
     tfidf_parser = subparsers.add_parser("tfidf", help="Get TF-IDF score for a term in a document")
     tfidf_parser.add_argument("doc_id", type=int, help="Document ID")
     tfidf_parser.add_argument("term", type=str, help="Term to look up")
+
+    bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
+    bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
+
+    bm25_tf_parser = subparsers.add_parser(
+        "bm25tf", help="Get BM25 TF score for a given document ID and term"
+    )
+    bm25_tf_parser.add_argument("doc_id", type=int, help="Document ID")
+    bm25_tf_parser.add_argument("term", type=str, help="Term to get BM25 TF score for")
+    bm25_tf_parser.add_argument("k1", type=float, nargs="?", default=BM25_K1, help="Tunable BM25 K1 parameter")
+    bm25_tf_parser.add_argument("b", type=float, nargs="?", default=BM25_B, help="Tunable BM25 b parameter")
+
+    bm25search_parser = subparsers.add_parser("bm25search", help="Search movies using full BM25 scoring")
+    bm25search_parser.add_argument("query", type=str, help="Search query")
+    bm25search_parser.add_argument("--limit", type=int, default=5, help="Number of results to return")
 
     args = parser.parse_args()
 
@@ -105,6 +127,30 @@ def main() -> None:
             idf = math.log((total_docs + 1) / (term_docs + 1))
             tf_idf = tf * idf
             print(f"TF-IDF score of '{args.term}' in document '{args.doc_id}': {tf_idf:.2f}")
+        case "bm25idf":
+            try:
+                bm25idf = bm25_idf_command(args.term)
+            except (FileNotFoundError, ValueError) as e:
+                print(e)
+                return
+            print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
+        case "bm25tf":
+            try:
+                bm25tf = bm25_tf_command(args.doc_id, args.term, args.k1, args.b)
+            except (FileNotFoundError, ValueError) as e:
+                print(e)
+                return
+            print(f"BM25 TF score of '{args.term}' in document '{args.doc_id}': {bm25tf:.2f}")
+        case "bm25search":
+            index = InvertedIndex()
+            try:
+                index.load()
+            except FileNotFoundError as e:
+                print(e)
+                return
+            results = index.bm25_search(args.query, args.limit)
+            for i, (doc_id, title, score) in enumerate(results, 1):
+                print(f"{i}. ({doc_id}) {title} - Score: {score:.2f}")
         case "search":
             base = Path(__file__).resolve().parent.parent
             stopwords = _load_stopwords(base / "data" / "stopwords.txt")
