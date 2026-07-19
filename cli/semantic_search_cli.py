@@ -1,4 +1,5 @@
 import json
+import re
 import argparse
 from pathlib import Path
 
@@ -26,6 +27,12 @@ def main() -> None:
     chunk_parser = subparsers.add_parser("chunk", help="Split text into fixed-size word chunks")
     chunk_parser.add_argument("text", type=str, help="Text to chunk")
     chunk_parser.add_argument("--chunk-size", type=int, default=200, help="Number of words per chunk")
+    chunk_parser.add_argument("--overlap", type=int, default=0, help="Number of overlapping words between chunks")
+
+    semantic_chunk_parser = subparsers.add_parser("semantic-chunk", help="Split text into sentence-boundary chunks")
+    semantic_chunk_parser.add_argument("text", type=str, help="Text to chunk")
+    semantic_chunk_parser.add_argument("--max-chunk-size", type=int, default=4, help="Maximum number of sentences per chunk")
+    semantic_chunk_parser.add_argument("--overlap", type=int, default=0, help="Number of overlapping sentences between chunks")
 
     args = parser.parse_args()
 
@@ -36,10 +43,21 @@ def main() -> None:
             verify_embeddings()
         case "embed-query":
             embed_query_text(args.query)
+        case "semantic-chunk":
+            sentences = re.split(r"(?<=[.!?])\s+", args.text.strip())
+            step = args.max_chunk_size - args.overlap
+            chunks = []
+            for i in range(0, len(sentences), step):
+                chunk = " ".join(sentences[i:i + args.max_chunk_size])
+                chunks.append(chunk)
+            print(f"Semantically chunking {sum(len(c) for c in chunks)} characters")
+            for i, chunk in enumerate(chunks, 1):
+                print(f"{i}. {chunk}")
         case "chunk":
             words = args.text.split()
+            step = args.chunk_size - args.overlap
             chunks = []
-            for i in range(0, len(words), args.chunk_size):
+            for i in range(0, len(words), step):
                 chunk = " ".join(words[i:i + args.chunk_size])
                 chunks.append(chunk)
             print(f"Chunking {sum(len(c) for c in chunks)} characters")
