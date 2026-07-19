@@ -5,6 +5,17 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 
+def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+
+    return dot_product / (norm1 * norm2)
+
+
 class SemanticSearch:
     def __init__(self, device: str | None = None):
         kwargs = {"device": device} if device else {}
@@ -29,6 +40,22 @@ class SemanticSearch:
         cache_dir.mkdir(exist_ok=True)
         np.save(cache_dir / "movie_embeddings.npy", self.embeddings)
         return self.embeddings
+
+    def search(self, query: str, limit: int = 5) -> list[dict]:
+        if self.embeddings is None:
+            raise ValueError("No embeddings loaded. Call `load_or_create_embeddings` first.")
+        query_embedding = self.generate_embedding(query)
+        results = []
+        for i, doc_embedding in enumerate(self.embeddings):
+            score = cosine_similarity(query_embedding, doc_embedding)
+            doc = self.documents[i]
+            results.append({
+                "score": score,
+                "title": doc["title"],
+                "description": doc["description"],
+            })
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:limit]
 
     def load_or_create_embeddings(self, documents: list[dict]):
         self.documents = documents
@@ -57,6 +84,14 @@ def embed_text(text: str) -> None:
     print(f"Text: {text}")
     print(f"First 3 dimensions: {embedding[:3]}")
     print(f"Dimensions: {embedding.shape[0]}")
+
+
+def embed_query_text(query: str) -> None:
+    ss = SemanticSearch()
+    embedding = ss.generate_embedding(query)
+    print(f"Query: {query}")
+    print(f"First 3 dimensions: {embedding[:3]}")
+    print(f"Shape: {embedding.shape}")
 
 
 def verify_embeddings() -> None:
