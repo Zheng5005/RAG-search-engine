@@ -23,6 +23,10 @@ def main() -> None:
     search_parser.add_argument("query", type=str, help="Search query")
     search_parser.add_argument("--limit", type=int, default=5, help="Number of results to return")
 
+    chunk_parser = subparsers.add_parser("chunk", help="Split text into fixed-size word chunks")
+    chunk_parser.add_argument("text", type=str, help="Text to chunk")
+    chunk_parser.add_argument("--chunk-size", type=int, default=200, help="Number of words per chunk")
+
     args = parser.parse_args()
 
     match args.command:
@@ -32,6 +36,15 @@ def main() -> None:
             verify_embeddings()
         case "embed-query":
             embed_query_text(args.query)
+        case "chunk":
+            words = args.text.split()
+            chunks = []
+            for i in range(0, len(words), args.chunk_size):
+                chunk = " ".join(words[i:i + args.chunk_size])
+                chunks.append(chunk)
+            print(f"Chunking {sum(len(c) for c in chunks)} characters")
+            for i, chunk in enumerate(chunks, 1):
+                print(f"{i}. {chunk}")
         case "search":
             base = Path(__file__).resolve().parent.parent
             with open(base / "data" / "course-rag-movies.json") as f:
