@@ -1,6 +1,6 @@
 import argparse
 
-from lib.hybrid_search import HybridSearch
+from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query
 from lib.semantic_search import load_movies
 
 
@@ -32,6 +32,12 @@ def main() -> None:
     rrf_parser.add_argument("query", type=str, help="Search query")
     rrf_parser.add_argument("-k", type=int, default=60, help="RRF k parameter (default: 60)")
     rrf_parser.add_argument("--limit", type=int, default=5, help="Number of results to return")
+    rrf_parser.add_argument(
+        "--enhance",
+        type=str,
+        choices=["spell", "rewrite", "expand"],
+        help="Query enhancement method",
+    )
 
     args = parser.parse_args()
 
@@ -51,9 +57,23 @@ def main() -> None:
                 print(f"  {desc}...")
                 print()
         case "rrf-search":
+            query = args.query
+            if args.enhance == "spell":
+                enhanced = correct_spelling(query)
+                print(f"Enhanced query (spell): '{query}' -> '{enhanced}'\n")
+                query = enhanced
+            elif args.enhance == "rewrite":
+                enhanced = rewrite_query(query)
+                print(f"Enhanced query (rewrite): '{query}' -> '{enhanced}'\n")
+                query = enhanced
+            elif args.enhance == "expand":
+                expanded = expand_query(query)
+                enhanced = f"{query} {expanded}"
+                print(f"Enhanced query (expand): '{query}' -> '{enhanced}'\n")
+                query = enhanced
             documents = load_movies()
             hs = HybridSearch(documents)
-            results = hs.rrf_search(args.query, args.k, args.limit)
+            results = hs.rrf_search(query, args.k, args.limit)
             for i, r in enumerate(results, 1):
                 doc = r["doc"]
                 desc = doc.get("description", "")[:100]
