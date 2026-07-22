@@ -1,6 +1,6 @@
 import argparse
 
-from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query
+from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query, rerank_batch, rerank_individual
 from lib.semantic_search import load_movies
 
 
@@ -38,6 +38,12 @@ def main() -> None:
         choices=["spell", "rewrite", "expand"],
         help="Query enhancement method",
     )
+    rrf_parser.add_argument(
+        "--rerank-method",
+        type=str,
+        choices=["individual", "batch"],
+        help="LLM re-ranking method",
+    )
 
     args = parser.parse_args()
 
@@ -73,13 +79,24 @@ def main() -> None:
                 query = enhanced
             documents = load_movies()
             hs = HybridSearch(documents)
-            results = hs.rrf_search(query, args.k, args.limit)
-            for i, r in enumerate(results, 1):
+            fetch = 5 * args.limit if args.rerank_method else args.limit
+            results = hs.rrf_search(query, args.k, fetch)
+            if args.rerank_method == "individual":
+                print(f"Re-ranking top {len(results)} results using individual method...\n")
+                results = rerank_individual(results, query)
+            elif args.rerank_method == "batch":
+                print(f"Re-ranking top {len(results)} results using batch method...\n")
+                results = rerank_batch(results, query)
+            for i, r in enumerate(results[:args.limit], 1):
                 doc = r["doc"]
                 desc = doc.get("description", "")[:100]
                 bm25_rank = str(r["bm25_rank"]) if r["bm25_rank"] is not None else "N/A"
                 sem_rank = str(r["semantic_rank"]) if r["semantic_rank"] is not None else "N/A"
                 print(f"{i}. {doc['title']}")
+                if "rerank_score" in r:
+                    print(f"  Re-rank Score: {r['rerank_score']:.3f}/10")
+                elif "rerank_rank" in r:
+                    print(f"  Re-rank Rank: {r['rerank_rank']}")
                 print(f"  RRF Score: {r['rrf']:.3f}")
                 print(f"  BM25 Rank: {bm25_rank}, Semantic Rank: {sem_rank}")
                 print(f"  {desc}...")

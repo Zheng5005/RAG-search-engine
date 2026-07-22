@@ -1,4 +1,6 @@
 import os
+import json
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -182,3 +184,78 @@ class HybridSearch:
 
         ranked = sorted(combined.values(), key=lambda x: x["rrf"], reverse=True)[:limit]
         return ranked
+
+
+RERANK_INDIVIDUAL_PROMPT = f"""Rate how well this movie matches the search query.
+
+Query: "{{query}}"
+Movie: {{title}} - {{document}}
+
+Consider:
+- Direct relevance to query
+- User intent (what they're looking for)
+- Content appropriateness
+
+Rate 0-10 (10 = perfect match).
+Output ONLY the number in your response, no other text or explanation.
+
+Score:"""
+
+
+def rerank_individual(results: list[dict], query: str) -> list[dict]:
+    for i, r in enumerate(results):
+        doc = r["doc"]
+        prompt = RERANK_INDIVIDUAL_PROMPT.format(
+            query=query,
+            title=doc.get("title", ""),
+            document=doc.get("description", "")[:100],
+        )
+        try:
+            raw = _llm_query(prompt)
+            score = float(raw.strip())
+            score = max(0.0, min(10.0, score))
+        except (ValueError, RuntimeError):
+            score = 0.0
+        r["rerank_score"] = score
+        if i < len(results) - 1:
+            time.sleep(3)
+    results.sort(key=lambda x: x["rerank_score"], reverse=True)
+    return results
+
+
+RERANK_BATCH_PROMPT = f"""Rank the movies listed below by relevance to the following search query.
+
+Query: "{{query}}"
+
+Movies:
+{{doc_list_str}}
+
+Return the movie IDs in order of relevance, best match first.
+
+Your response must be a raw JSON array of integers.
+Do not wrap the JSON in Markdown. Do not use a ```json code block.
+Do not include any explanatory text.
+
+For example:
+[75, 12, 34, 2, 1]
+
+Ranking:"""
+
+
+def rerank_batch(results: list[dict], query: str) -> list[dict]:
+    doc_list_str = "\n".join(
+        f"- ID: {r['doc']['id']}, Title: {r['doc'].get('title', '')}"
+        for r in results
+    )
+    prompt = RERANK_BATCH_PROMPT.format(query=query, doc_list_str=doc_list_str)
+    try:
+        raw = _llm_query(prompt)
+        ranked_ids = json.loads(raw.strip())
+    except (json.JSONDecodeError, RuntimeError):
+        ranked_ids = []
+
+    rank_map = {doc_id: rank for rank, doc_id in enumerate(ranked_ids, start=1)}
+    for r in results:
+        r["rerank_rank"] = rank_map.get(r["doc"]["id"], len(results) + 1)
+    results.sort(key=lambda x: x["rerank_rank"])
+    return results
