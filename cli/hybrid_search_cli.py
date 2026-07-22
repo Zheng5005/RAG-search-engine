@@ -1,6 +1,6 @@
 import argparse
 
-from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query, rerank_batch, rerank_individual
+from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query, rerank_batch, rerank_cross_encoder, rerank_individual
 from lib.semantic_search import load_movies
 
 
@@ -41,7 +41,7 @@ def main() -> None:
     rrf_parser.add_argument(
         "--rerank-method",
         type=str,
-        choices=["individual", "batch"],
+        choices=["individual", "batch", "cross_encoder"],
         help="LLM re-ranking method",
     )
 
@@ -87,6 +87,9 @@ def main() -> None:
             elif args.rerank_method == "batch":
                 print(f"Re-ranking top {len(results)} results using batch method...\n")
                 results = rerank_batch(results, query)
+            elif args.rerank_method == "cross_encoder":
+                print(f"Re-ranking top {len(results)} results using cross_encoder method...\n")
+                results = rerank_cross_encoder(results, query)
             for i, r in enumerate(results[:args.limit], 1):
                 doc = r["doc"]
                 desc = doc.get("description", "")[:100]
@@ -97,6 +100,8 @@ def main() -> None:
                     print(f"  Re-rank Score: {r['rerank_score']:.3f}/10")
                 elif "rerank_rank" in r:
                     print(f"  Re-rank Rank: {r['rerank_rank']}")
+                elif "cross_encoder_score" in r:
+                    print(f"  Cross Encoder Score: {r['cross_encoder_score']:.3f}")
                 print(f"  RRF Score: {r['rrf']:.3f}")
                 print(f"  BM25 Rank: {bm25_rank}, Semantic Rank: {sem_rank}")
                 print(f"  {desc}...")

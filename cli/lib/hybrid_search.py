@@ -259,3 +259,15 @@ def rerank_batch(results: list[dict], query: str) -> list[dict]:
         r["rerank_rank"] = rank_map.get(r["doc"]["id"], len(results) + 1)
     results.sort(key=lambda x: x["rerank_rank"])
     return results
+
+
+def rerank_cross_encoder(results: list[dict], query: str) -> list[dict]:
+    from sentence_transformers import CrossEncoder
+
+    cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2", device="cpu")
+    pairs = [[query, f"{r['doc'].get('title', '')} - {r['doc'].get('description', '')}"] for r in results]
+    scores = cross_encoder.predict(pairs)
+    for r, score in zip(results, scores):
+        r["cross_encoder_score"] = float(score)
+    results.sort(key=lambda x: x["cross_encoder_score"], reverse=True)
+    return results
