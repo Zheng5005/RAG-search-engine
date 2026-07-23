@@ -1,6 +1,8 @@
 import argparse
+import json
+import logging
 
-from lib.hybrid_search import HybridSearch, correct_spelling, expand_query, rewrite_query, rerank_batch, rerank_cross_encoder, rerank_individual
+from lib.hybrid_search import HybridSearch, _llm_query, correct_spelling, expand_query, rewrite_query, rerank_batch, rerank_cross_encoder, rerank_individual
 from lib.semantic_search import load_movies
 
 
@@ -18,6 +20,7 @@ def normalize(scores: list[float]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     normalize_parser = subparsers.add_parser("normalize", help="Min-max normalize a list of scores")
@@ -42,10 +45,14 @@ def main() -> None:
         "--rerank-method",
         type=str,
         choices=["individual", "batch", "cross_encoder"],
-        help="LLM re-ranking method",
+        help="Reranking method",
     )
+    rrf_parser.add_argument("--evaluate", action="store_true", help="Evaluate results with LLM")
 
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
 
     match args.command:
         case "normalize":
@@ -64,6 +71,7 @@ def main() -> None:
                 print()
         case "rrf-search":
             query = args.query
+            logging.debug("Original query: %s", query)
             if args.enhance == "spell":
                 enhanced = correct_spelling(query)
                 print(f"Enhanced query (spell): '{query}' -> '{enhanced}'\n")
@@ -77,10 +85,12 @@ def main() -> None:
                 enhanced = f"{query} {expanded}"
                 print(f"Enhanced query (expand): '{query}' -> '{enhanced}'\n")
                 query = enhanced
+            logging.debug("Enhanced query: %s", query)
             documents = load_movies()
             hs = HybridSearch(documents)
             fetch = 5 * args.limit if args.rerank_method else args.limit
             results = hs.rrf_search(query, args.k, fetch)
+            logging.debug("RRF results (%d): %s", len(results), [(r["doc"]["title"], round(r["rrf"], 4)) for r in results[:10]])
             if args.rerank_method == "individual":
                 print(f"Re-ranking top {len(results)} results using individual method...\n")
                 results = rerank_individual(results, query)
@@ -90,6 +100,8 @@ def main() -> None:
             elif args.rerank_method == "cross_encoder":
                 print(f"Re-ranking top {len(results)} results using cross_encoder method...\n")
                 results = rerank_cross_encoder(results, query)
+            if args.rerank_method:
+                logging.debug("Re-ranked results (%d): %s", len(results), [(r["doc"]["title"], round(r.get("rerank_score", r.get("rerank_rank", r.get("cross_encoder_score", 0))), 3)) for r in results[:10]])
             for i, r in enumerate(results[:args.limit], 1):
                 doc = r["doc"]
                 desc = doc.get("description", "")[:100]
@@ -106,6 +118,38 @@ def main() -> None:
                 print(f"  BM25 Rank: {bm25_rank}, Semantic Rank: {sem_rank}")
                 print(f"  {desc}...")
                 print()
+            if args.evaluate:
+                print("\nEvaluating results with LLM...\n")
+                formatted_results = []
+                for r in results[:args.limit]:
+                    doc = r["doc"]
+                    formatted_results.append(f"{doc['title']}: {doc.get('description', '')[:200]}")
+                eval_prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+
+Query: "{query}"
+
+Results:
+{chr(10).join(formatted_results)}
+
+Scale:
+- 3: Highly relevant
+- 2: Relevant
+- 1: Marginally relevant
+- 0: Not relevant
+
+Do NOT give any numbers other than 0, 1, 2, or 3.
+
+Return ONLY the scores in the same order you were given the documents. Return a valid JSON list, nothing else. For example:
+
+[2, 0, 3, 2, 0, 1]"""
+                try:
+                    raw = _llm_query(eval_prompt)
+                    scores = json.loads(raw.strip())
+                    print("Evaluation Report:")
+                    for i, (r, score) in enumerate(zip(results[:args.limit], scores), 1):
+                        print(f"{i}. {r['doc']['title']}: {score}/3")
+                except (json.JSONDecodeError, RuntimeError) as e:
+                    print(f"Evaluation failed: {e}")
         case _:
             parser.print_help()
 
